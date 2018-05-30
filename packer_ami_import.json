@@ -1,0 +1,137 @@
+{
+    "variables": {
+        "aws_access_key": "",
+        "aws_secret_key": "",
+        "ssh_username": "",
+        "ssh_password": "",
+        "git_commit": "",
+        "git_tag": "",
+	"jira_ticket": ""
+    },
+    "provisioners" : [
+           {
+                "type": "file",
+                "source": "cloud_init/cloud.cfg",
+                "destination": "/tmp/cloud.cfg"
+            },
+            {
+                "type": "file",
+                "source": "chef_key/chef_pub.txt",
+                "destination": "/tmp/chef_pub.txt"
+            },
+            {
+                "type": "file",
+                "source": "chef_key/ssh_config.txt",
+                "destination": "/tmp/ssh_config.txt"
+            },
+            {
+                "type": "file",
+                "source": "chef_key/known_hosts.txt",
+                "destination": "/tmp/known_hosts.txt"
+            },
+            {
+                "type": "file",
+                "source": "scripts",
+                "destination": "/tmp"
+            },
+            {
+                "type": "shell",
+                "inline": [
+                    "sudo su -c 'chmod +x /tmp/scripts/initial_configuration.sh'",
+                    "sudo su -c '/tmp/scripts/initial_configuration.sh'"
+                ]
+            },
+            {
+                "type": "chef-solo",
+                "install_command": "sudo su -c 'curl -L https://www.opscode.com/chef/install.sh | {{if .Sudo}}sudo{{end}} bash -s -- -v 13.6.4'",
+                "cookbook_paths": ["/var/lib/jenkins/workspace/chef-repo/cookbooks"],
+                "data_bags_path": "/var/lib/jenkins/workspace/chef-repo/data_bags",
+                "run_list": [
+                    "recipe[system_baseline::packer_default]"
+                ]
+            },
+            {
+                "type": "file",
+                "source": "spec",
+                "destination": "/tmp"
+            },
+            {
+                "type": "shell",
+                "inline": [
+                    "sudo su -c 'chmod +x /tmp/scripts/set_rc_local.sh'",
+                    "sudo su -c '/tmp/scripts/set_rc_local.sh'"
+                ]
+            },
+            {
+                "type": "shell",
+                "inline": [
+                    "sudo su -c 'cp -rf /tmp/spec/Gemfile ..'",
+                    "sudo su -c 'cp -rf /tmp/spec/Rakefile ..'",
+                    "sudo su -c 'cp -rf /tmp/spec/spec_helper.rb ..'",
+                    "sudo su -c 'cp -rf /tmp/spec/.rspec ..'",
+                    "sudo su -c 'chmod +x /tmp/scripts/serverspec.sh'",
+                    "sudo su -c '/tmp/scripts/serverspec.sh'"
+                ]
+            },
+            {
+                "type": "shell",
+                "inline": [
+                    "sudo su -c 'chmod +x /tmp/scripts/cleanup.sh'",
+                    "sudo su -c '/tmp/scripts/cleanup.sh'"
+                ]
+            }],
+            "post-processors": [{
+                "type": "amazon-import",
+                "access_key": "{{user `aws_access_key`}}",
+                "secret_key": "{{user `aws_secret_key`}}",
+                "region": "us-east-1",
+                "s3_bucket_name": "gsmasterimages",
+                "ami_name": "Packer_CI_{{user `git_tag`}}",
+                "ami_description": "Packer Master {{user `git_tag`}}",
+                "tags": {
+                   "Description": "CentOS 7.x Continuous Integration {{timestamp}}",
+                   "Name": "Packer_CI_{{user `git_tag`}}",
+                   "Version": "{{user `git_tag`}}",
+                   "Platform": "Linux",
+                   "Git Commit": "{{user `git_commit`}}",
+                   "Git Tag": "{{user `git_tag`}}",
+                   "Jira Ticket": "{{user `jira_ticket`}}"
+                }
+            }],
+            "builders": [
+                {
+                "type": "virtualbox-iso",
+                "export_opts":
+                [
+                    "--manifest",
+                    "--vsys", "0",
+                    "--description", "{{user `vm_description`}}",
+                    "--version", "{{user `vm_version`}}"
+                ],
+                "format": "ova",
+                "boot_command": [
+                    "<esc><esc><enter><wait>",
+                    "<tab> text ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks_dna.cfg<enter><wait>",
+                    "<enter>"
+                ],
+                "boot_wait": "10s",
+                "disk_size": 30720,
+		        "guest_additions_mode": "disable",
+		        "headless": "true",
+                "guest_os_type": "RedHat_64",
+                "http_directory": "http_directory",
+                "iso_checksum": "71a7aa147877b413497cdff5b1e0aa5bc0c9484f",
+                "iso_checksum_type": "sha1",
+                "iso_url": "https://archive.kernel.org/centos-vault/7.3.1611/isos/x86_64/CentOS-7-x86_64-Minimal-1611.iso",
+                "ssh_username": "{{user `ssh_username`}}",
+                "ssh_password": "{{user `ssh_password`}}",
+                "ssh_port": 22,
+                "ssh_wait_timeout": "10000s",
+                "shutdown_command": "echo '/sbin/halt -h -p' > /tmp/shutdown.sh; echo 'vagrant'|sudo -S sh '/tmp/shutdown.sh'",
+                "virtualbox_version_file": ".vbox_version",
+                "vboxmanage": [
+                    [ "modifyvm", "{{.Name}}", "--memory", "512" ],
+                    [ "modifyvm", "{{.Name}}", "--cpus", "1" ]
+                ]
+            }]
+}
